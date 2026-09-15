@@ -1,0 +1,7 @@
+.zed/
+bin/
+deps/
+certs/
+current.log
+*.o
+.cache/

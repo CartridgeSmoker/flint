@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev libvulkan-dev
+
+      - name: Build
+        run: make
+
+      - name: Run checks
+        run: make check
+
+  build:
+    name: Build Binaries
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev libvulkan-dev
+
+      - name: Build binary
+        run: |
+          mkdir -p dist
+          make
+          cp bin/flint dist/flint-linux-amd64
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flint-linux-amd64
+          path: dist/flint-linux-amd64
+          retention-days: 30
