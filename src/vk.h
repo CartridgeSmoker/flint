@@ -16,9 +16,10 @@ struct Vk {
     VkSurfaceKHR surf;
 };
 
-// vk_init creates the instance, picks a device
-// with Wayland present support, then creates
-// the device and surface. False on failure.
+// vk_init creates the instance and picks a
+// device with Wayland present support. Device
+// creation lands next. Call vk_finish after
+// any return. False on failure.
 bool vk_init(struct Vk* vk, struct Wl* wl);
 
 // vk_finish destroys surface, device, and instance.
