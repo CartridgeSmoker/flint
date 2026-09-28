@@ -5,17 +5,17 @@
 
 #include "xdg-shell-client-protocol.h"
 
-// registry_global fires once for every global
-// object the compositor advertises. Flint only
-// needs the compositor and the xdg_wm_base
-// shell, so every other interface is ignored.
+// registry_global fires once for every global object the compositor advertises.
+
 static void registry_global(void* data,
                              struct wl_registry* registry,
-                             uint32_t name,
-                             const char* interface,
-                             uint32_t version) {
+                             uint32_t name,                 //Unique ID of the global object
+                             const char* interface,         //Name of the interface
+                             uint32_t version) {            //Version of the interface
     (void)version;
     struct Wl* wl = data;
+    //Flint only needs the compositor and the xdg_wm_base shell,
+    //so every other interface is ignored.
 
     if (strcmp(interface, wl_compositor_interface.name) ==
         0) {
@@ -39,23 +39,33 @@ static void registry_global_remove(
     (void)name;
 }
 
-static const struct wl_registry_listener
-    registry_listener = {
-        .global = registry_global,
-        .global_remove = registry_global_remove,
-};
+// The registry keeps a pointer to this struct
+// and may call back long after wl_init returns,
+// so it must outlive the function. Static keeps
+// it alive, and its fields are assigned one by
+// one inside wl_init.
+
+static struct wl_registry_listener registry_listener;
 
 bool wl_init(struct Wl* wl) {
     memset(wl, 0, sizeof(*wl));
 
+    memset(&registry_listener, 0,
+       sizeof(registry_listener));
+    registry_listener.global = registry_global;
+    registry_listener.global_remove =
+        registry_global_remove;
+
+
     // Connect to the compositor named by
     // WAYLAND_DISPLAY, or the default socket
     // when unset.
-    wl->display = wl_display_connect(NULL);
+    wl->display = wl_display_connect(NULL);                 //Connects to the standard compositor when parameter is NULL
     if (!wl->display) {
         fprintf(stderr, "wl_display_connect failed\n");
         return false;
     }
+    fprintf(stderr, "succesfully connected to compositor\n");
 
     wl->registry = wl_display_get_registry(wl->display);
     if (!wl->registry) {
