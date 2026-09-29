@@ -6,3 +6,5 @@ current.log
 *.o
 .cache/
 /.vs
+.idea
+.git
