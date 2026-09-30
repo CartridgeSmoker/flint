@@ -11,7 +11,9 @@ struct fl_app {
     struct Vk vk;
 };
 
+#ifndef __cplusplus
 extern "C" {
+#endif
 
 fl_result_t fl_app_create(fl_app_t* out) {
     if (out == NULL) {
@@ -52,4 +54,7 @@ void fl_app_destroy(fl_app_t app) {
 
     free(app);
 }
+
+#ifndef __cplusplus
 }
+#endif
