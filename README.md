@@ -5,7 +5,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/neiltalap/flint" alt="License"></a>
 </p>
 
-Flint is a high-performance framework for technical desktop applications. It is a cross-platform framework for GPU-intensive applications, combining production-ready UI components with high-performance rendering. Planned support covers Windows, Linux, macOS, Android, and iOS.
+Flint is a high-performance framework for technical desktop applications. It targets Linux on Wayland for GPU-intensive applications, combining production-ready UI components with high-performance rendering.
 
 Flint is opinionated and utility-focused. Application structure such as sidebars, panels, tables, and viewports ships premade, so a new application bootstraps quickly and most Flint applications look largely the same. Rendering goes through a single Vulkan path, so conventional UI and intensive views such as 2D/3D viewports, real-time graphs, and large datasets are drawn by the same backend.
 
