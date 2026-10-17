@@ -1,8 +1,8 @@
 <h1 align="center">Flint</h1>
 
 <p align="center">
-  <a href="https://github.com/podomy/flint/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/podomy/flint/ci.yml?label=linux" alt="Linux"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/podomy/flint" alt="License"></a>
+  <a href="https://github.com/neiltalap/flint/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/neiltalap/flint/ci.yml?label=linux" alt="Linux"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/neiltalap/flint" alt="License"></a>
 </p>
 
 Flint is a high-performance framework for technical desktop applications. It is a cross-platform framework for GPU-intensive applications, combining production-ready UI components with high-performance rendering. Planned support covers Windows, Linux, macOS, Android, and iOS.
@@ -21,12 +21,9 @@ Early development. The public C API lives in `include/flint/` with a stable opaq
 
 ### Contributing
 
-Discuss your change with the engineering team at [contact@podomy.com](mailto:contact@podomy.com) before opening a PR in order not to waste anybody's effort or time.
-
-Announcements and engineering updates are shared via our newsletter at [podomy.com](https://podomy.com).
+Discuss your change with the maintainer at [contact@neiltalap.com](mailto:contact@neiltalap.com) before opening a PR in order not to waste anybody's effort or time.
 
 - [Commit message format](./COMMITS)
-- [Contributor license agreement](./CLA)
 - [Contributing](./CONTRIBUTING)
 
 ### License
