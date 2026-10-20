@@ -1,5 +1,4 @@
 # Invariants
 
-1. Wayland only. Flint targets Linux and Wayland. No X11 fallback or compatibility path.
-2. Stable C ABI from day one. The public API uses opaque handles. Implementation structs and Vulkan types are not exposed in public headers.
+1. Linux on Wayland. Flint targets Linux with a Wayland-only windowing path. Rendering goes through a single Vulkan path. Platform code stays in internal windowing and surface helpers and never leaks into the public API.
 
