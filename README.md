@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/logo.png" alt="Flint" width="20%">
+</p>
+
 <h1 align="center">Flint</h1>
 
 <p align="center">
