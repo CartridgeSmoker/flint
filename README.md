@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/logo.png" alt="Flint" width="20%">
+  <img src="./assets/logo.png" alt="Flint" width="10%">
 </p>
 
 <h1 align="center">Flint</h1>
