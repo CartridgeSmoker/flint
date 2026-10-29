@@ -1,6 +1,23 @@
 CC ?= cc
 CXX ?= c++
 
+# Flint uses a C23 subset (nullptr,
+# constexpr objects, attributes) that
+# older compilers reject. Fail fast
+# with a clear message instead of
+# pages of syntax errors.
+C23_PROBE := $(shell printf '%s\n' \
+    'static constexpr unsigned N = 8;' \
+    '[[nodiscard]] static int f(void *p)' \
+    '{ return p == nullptr; }' \
+    'int arr[N];' \
+    'int main(void) { return f(nullptr); }' \
+    | $(CC) -std=c23 -pedantic -x c -c - \
+    -o /dev/null 2>/dev/null && echo ok)
+ifeq ($(C23_PROBE),)
+$(error C compiler rejects Flint's C23 subset (nullptr, constexpr objects, attributes); use a newer GCC or Clang)
+endif
+
 CFLAGS += -std=c23 -pedantic -Wall -Wextra -Werror
 CFLAGS += -O2 -Wunused-result
 CFLAGS += -Igenerated -Iinclude
@@ -16,11 +33,22 @@ CXXFLAGS += -Igenerated -Iinclude -I.
 PKG_CFLAGS := $(shell pkg-config --cflags wayland-client vulkan 2>/dev/null)
 PKG_LIBS := $(shell pkg-config --libs wayland-client vulkan 2>/dev/null)
 
-# Wayland protocol generation
+# Wayland protocol discovery. Prefer
+# pkg-config so distro layout changes
+# do not break the build; fall back
+# to the historical prefix.
+WAYLAND_PROTOCOLS := $(shell pkg-config \
+    --variable=pkgdatadir \
+    wayland-protocols 2>/dev/null)
+ifeq ($(WAYLAND_PROTOCOLS),)
 WAYLAND_PROTOCOLS := /usr/share/wayland-protocols
+endif
 WAYLAND_SCANNER := wayland-scanner
 
 XDG_XML := $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml
+ifeq ($(wildcard $(XDG_XML)),)
+$(error xdg-shell.xml not found under $(WAYLAND_PROTOCOLS); install the wayland-protocols package)
+endif
 XDG_HEADER := generated/xdg-shell-client-protocol.h
 XDG_SOURCE := generated/xdg-shell-protocol.c
 

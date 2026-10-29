@@ -15,7 +15,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwayland-dev libvulkan-dev
+          sudo apt-get install -y libwayland-dev libvulkan-dev wayland-protocols
 
       - name: Build
         run: make
@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwayland-dev libvulkan-dev
+          sudo apt-get install -y libwayland-dev libvulkan-dev wayland-protocols
 
       - name: Build binary
         run: |
