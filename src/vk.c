@@ -11,9 +11,9 @@
 
 // vk_init() depends on wl_init() having succeeded because it needs wl.display and wl.surface It then creates: VkInstance -> VkSurfaceKHR (Wayland Surface) -> graphics + presentation queue family -> VkDevice -> VkQueue
 
-// Flat background color for the one frame this demo clears to.
+// Flat background color cleared to every frame.
 static const VkClearColorValue kClearColor = {
-    .float32 = {0.05f, 0.05f, 0.08f, 1.0f},
+    .float32 = {0.35f, 0.10f, 0.55f, 1.0f},
 };
 
 #ifndef NDEBUG
