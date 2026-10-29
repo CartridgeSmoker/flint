@@ -11,26 +11,27 @@
 // us otherwise via xdg_toplevel's configure
 // event (a size of 0 from the compositor means
 // "no preference").
-#define WL_DEFAULT_WIDTH 1280
-#define WL_DEFAULT_HEIGHT 720
+static constexpr int32_t WL_DEFAULT_WIDTH = 1280;
+static constexpr int32_t WL_DEFAULT_HEIGHT = 720;
 
 // Give up waiting for the first xdg_surface
 // configure after this many round-trips, rather
 // than blocking forever against a compositor
 // that never responds.
-#define WL_CONFIGURE_ROUNDTRIP_LIMIT 100
+static constexpr int
+    WL_CONFIGURE_ROUNDTRIP_LIMIT = 100;
 
 // registry_global fires once for every global object the compositor advertises.
 static void registry_global(void* data,
                              struct wl_registry* registry,
-                             uint32_t name,                 //Unique ID of the global object
-                             const char* interface,         //Name of the interface
-                             uint32_t version) {            //Version of the interface
+                             uint32_t name,                 // Unique ID of the global object
+                             const char* interface,         // Name of the interface
+                             uint32_t version) {            // Version of the interface
     (void)version;
     struct Wl* wl = data;
 
-    //Flint only needs the compositor and the xdg_wm_base shell,
-    //so every other interface is ignored.
+    // Flint only needs the compositor and the xdg_wm_base shell,
+    // so every other interface is ignored.
     if (strcmp(interface, wl_compositor_interface.name) ==
         0) {
         wl->compositor = wl_registry_bind(
@@ -113,33 +114,42 @@ static void xdg_toplevel_close(
 // These listener structs are kept alive for as
 // long as their objects exist, since Wayland
 // stores a pointer to them rather than copying
-// them at registration time. They can't be
-// const because their fields are assigned one
-// by one inside wl_init rather than through a
-// struct literal.
-static struct wl_registry_listener registry_listener;
-static struct xdg_wm_base_listener wm_base_listener;
-static struct xdg_surface_listener xdg_surface_listener;
-static struct xdg_toplevel_listener
-    xdg_toplevel_listener;
+// them at registration time.
+static const struct wl_registry_listener
+    registry_listener = {
+        .global = registry_global,
+        .global_remove = registry_global_remove,
+};
+static const struct xdg_wm_base_listener
+    wm_base_listener = {
+        .ping = wm_base_ping,
+};
+static const struct xdg_surface_listener
+    xdg_surface_listener = {
+        .configure = xdg_surface_configure,
+};
+static const struct xdg_toplevel_listener
+    xdg_toplevel_listener = {
+        .configure = xdg_toplevel_configure,
+        .close = xdg_toplevel_close,
+};
 
+// wl_init connects to the compositor,
+// binds globals, and creates the window.
+// On failure it releases partial state
+// via wl_finish and returns false.
 bool wl_init(struct Wl* wl) {
     memset(wl, 0, sizeof(*wl));
     wl->width = WL_DEFAULT_WIDTH;
     wl->height = WL_DEFAULT_HEIGHT;
 
-    memset(&registry_listener, 0,
-           sizeof(registry_listener));
-    registry_listener.global = registry_global;
-    registry_listener.global_remove =
-        registry_global_remove;
-
     // Connect to the compositor named by
     // WAYLAND_DISPLAY, or the default socket
     // when unset.
-    wl->display = wl_display_connect(NULL);                 //Connects to the standard compositor when parameter is NULL
+    wl->display = wl_display_connect(nullptr);                 // Connects to the standard compositor when parameter is NULL
     if (!wl->display) {
         fprintf(stderr, "wl_display_connect failed\n");
+        wl_finish(wl);
         return false;
     }
     fprintf(stderr, "Connected to compositor\n");
@@ -148,6 +158,7 @@ bool wl_init(struct Wl* wl) {
     if (!wl->registry) {
         fprintf(stderr,
                 "wl_display_get_registry failed\n");
+        wl_finish(wl);
         return false;
     }
 
@@ -159,23 +170,23 @@ bool wl_init(struct Wl* wl) {
     // check what got bound.
     if (wl_display_roundtrip(wl->display) < 0) {
         fprintf(stderr, "wl_display_roundtrip failed\n");
+        wl_finish(wl);
         return false;
     }
 
     if (!wl->compositor) {
         fprintf(stderr,
                 "wl_compositor global not found\n");
+        wl_finish(wl);
         return false;
     }
     if (!wl->wm_base) {
         fprintf(stderr,
                 "xdg_wm_base global not found\n");
+        wl_finish(wl);
         return false;
     }
 
-    memset(&wm_base_listener, 0,
-           sizeof(wm_base_listener));
-    wm_base_listener.ping = wm_base_ping;
     xdg_wm_base_add_listener(wl->wm_base,
                               &wm_base_listener, wl);
 
@@ -184,6 +195,7 @@ bool wl_init(struct Wl* wl) {
     if (!wl->surface) {
         fprintf(stderr,
                 "wl_compositor_create_surface failed\n");
+        wl_finish(wl);
         return false;
     }
 
@@ -195,13 +207,10 @@ bool wl_init(struct Wl* wl) {
     if (!wl->xdg_surface) {
         fprintf(stderr,
                 "xdg_wm_base_get_xdg_surface failed\n");
+        wl_finish(wl);
         return false;
     }
 
-    memset(&xdg_surface_listener, 0,
-           sizeof(xdg_surface_listener));
-    xdg_surface_listener.configure =
-        xdg_surface_configure;
     xdg_surface_add_listener(
         wl->xdg_surface, &xdg_surface_listener, wl);
 
@@ -213,14 +222,10 @@ bool wl_init(struct Wl* wl) {
     if (!wl->xdg_toplevel) {
         fprintf(stderr,
                 "xdg_surface_get_toplevel failed\n");
+        wl_finish(wl);
         return false;
     }
 
-    memset(&xdg_toplevel_listener, 0,
-           sizeof(xdg_toplevel_listener));
-    xdg_toplevel_listener.configure =
-        xdg_toplevel_configure;
-    xdg_toplevel_listener.close = xdg_toplevel_close;
     xdg_toplevel_add_listener(
         wl->xdg_toplevel, &xdg_toplevel_listener, wl);
 
@@ -242,6 +247,7 @@ bool wl_init(struct Wl* wl) {
             fprintf(stderr,
                     "wl_display_roundtrip failed while "
                     "waiting for configure\n");
+            wl_finish(wl);
             return false;
         }
         guard++;
@@ -249,6 +255,7 @@ bool wl_init(struct Wl* wl) {
             fprintf(stderr,
                     "compositor never sent an "
                     "xdg_surface configure\n");
+            wl_finish(wl);
             return false;
         }
     }
@@ -308,30 +315,30 @@ void wl_finish(struct Wl* wl) {
     // connection itself.
     if (wl->xdg_toplevel) {
         xdg_toplevel_destroy(wl->xdg_toplevel);
-        wl->xdg_toplevel = NULL;
+        wl->xdg_toplevel = nullptr;
     }
     if (wl->xdg_surface) {
         xdg_surface_destroy(wl->xdg_surface);
-        wl->xdg_surface = NULL;
+        wl->xdg_surface = nullptr;
     }
     if (wl->surface) {
         wl_surface_destroy(wl->surface);
-        wl->surface = NULL;
+        wl->surface = nullptr;
     }
     if (wl->wm_base) {
         xdg_wm_base_destroy(wl->wm_base);
-        wl->wm_base = NULL;
+        wl->wm_base = nullptr;
     }
     if (wl->compositor) {
         wl_compositor_destroy(wl->compositor);
-        wl->compositor = NULL;
+        wl->compositor = nullptr;
     }
     if (wl->registry) {
         wl_registry_destroy(wl->registry);
-        wl->registry = NULL;
+        wl->registry = nullptr;
     }
     if (wl->display) {
         wl_display_disconnect(wl->display);
-        wl->display = NULL;
+        wl->display = nullptr;
     }
 }

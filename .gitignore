@@ -5,7 +5,9 @@ certs/
 generated/
 current.log
 *.o
+dist/
 .cache/
 /.vs
 .idea
 .git
+compile_commands.json
