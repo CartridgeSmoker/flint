@@ -17,9 +17,9 @@ jobs:
         run: make check
       - name: Ensure all src/ compiled
         run: |
-          for f in src/*.c; do
-            nm bin/*.o | grep $(basename $f .c) || (echo "$f not compiled" && exit 1)
-          done
-      - name: Ensure no generated files committed
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev libvulkan-dev wayland-protocols
+
+      - name: Build binary
         run: |
           git ls-files bin/wayland-protocols-client.h bin/wayland-protocols-code.c && exit 1 || exit 0

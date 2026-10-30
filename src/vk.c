@@ -11,10 +11,29 @@
 
 // vk_init() depends on wl_init() having succeeded because it needs wl.display and wl.surface It then creates: VkInstance -> VkSurfaceKHR (Wayland Surface) -> graphics + presentation queue family -> VkDevice -> VkQueue
 
-// Flat background color for the one frame this demo clears to.
+// Flat background color cleared to every frame.
 static const VkClearColorValue kClearColor = {
-    .float32 = {0.05f, 0.05f, 0.08f, 1.0f},
+    .float32 = {0.35f, 0.10f, 0.55f, 1.0f},
 };
+
+#ifndef NDEBUG
+// vk_debug_cb prints validation layer
+// messages to stderr. Always returns
+// VK_FALSE so the call is not aborted.
+static VKAPI_ATTR VkBool32 VKAPI_CALL
+vk_debug_cb(VkDebugUtilsMessageSeverityFlagBitsEXT sev,
+            VkDebugUtilsMessageTypeFlagsEXT type,
+            const VkDebugUtilsMessengerCallbackDataEXT*
+                data,
+            void* user) {
+    (void)sev;
+    (void)type;
+    (void)user;
+    fprintf(stderr, "vulkan: %s\n",
+            data->pMessage);
+    return VK_FALSE;
+}
+#endif
 
 bool vk_init(struct Vk* vk, struct Wl* wl) {
     memset(vk, 0, sizeof(*vk));
@@ -23,6 +42,11 @@ bool vk_init(struct Vk* vk, struct Wl* wl) {
     const char* exts[] = {
         VK_KHR_SURFACE_EXTENSION_NAME,
         VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME,
+#ifndef NDEBUG
+        // Debug builds route validation
+        // output through EXT_debug_utils.
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+#endif
     };
 
     // App metadata for the loader. sType tags the struct type. Names and versions are informational, apiVersion sets the API contract the code is written against.
@@ -39,14 +63,42 @@ bool vk_init(struct Vk* vk, struct Wl* wl) {
     create_info.sType =
         VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     create_info.pApplicationInfo = &app_info;
-    create_info.enabledExtensionCount = 2;
+    create_info.enabledExtensionCount =
+        sizeof(exts) / sizeof(exts[0]);
     create_info.ppEnabledExtensionNames = exts;
+
+#ifndef NDEBUG
+    // Debug builds enable the standard
+    // validation layer. The messenger
+    // create info in pNext also captures
+    // messages from instance creation
+    // itself.
+    const char* layers[] = {
+        "VK_LAYER_KHRONOS_validation",
+    };
+    create_info.enabledLayerCount = 1;
+    create_info.ppEnabledLayerNames = layers;
+
+    VkDebugUtilsMessengerCreateInfoEXT dbg_info = {
+        0};
+    dbg_info.sType =
+        VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    dbg_info.messageSeverity =
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    dbg_info.messageType =
+        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    dbg_info.pfnUserCallback = vk_debug_cb;
+    create_info.pNext = &dbg_info;
+#endif
 
     // NULL in the pAllocator parameter selects Vulkan's default host memory allocator
     // We can pass our own host memory allocator to allocate memory in DRAM/Heap by providing a VkAllocationCallbacks structure whose callbacks forward to malloc, realloc, and free
     // We can allocate memory in VRAM/GPU visible memory by calling vkAllocateMemory directly with the needed requirements (the vkAllocateMemory function needs appropriate vulkan memory type and a binded buffer)
     VkResult result =
-        vkCreateInstance(&create_info, NULL, &vk->inst);
+        vkCreateInstance(&create_info, nullptr, &vk->inst);
     if (result != VK_SUCCESS) {
         fprintf(
             stderr,
@@ -54,6 +106,38 @@ bool vk_init(struct Vk* vk, struct Wl* wl) {
             result);
         return false;
     }
+
+#ifndef NDEBUG
+    // Persistent messenger for messages
+    // after instance creation. Loaded by
+    // name since EXT_debug_utils is an
+    // extension.
+    PFN_vkCreateDebugUtilsMessengerEXT create_messenger =
+        (PFN_vkCreateDebugUtilsMessengerEXT)
+            vkGetInstanceProcAddr(
+                vk->inst,
+                "vkCreateDebugUtilsMessengerEXT");
+    if (create_messenger == nullptr) {
+        fprintf(stderr,
+                "vkGetInstanceProcAddr for "
+                "vkCreateDebugUtilsMessengerEXT "
+                "failed\n");
+        vkDestroyInstance(vk->inst, nullptr);
+        vk->inst = VK_NULL_HANDLE;
+        return false;
+    }
+    result = create_messenger(vk->inst, &dbg_info,
+                              nullptr, &vk->dbg);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr,
+                "vkCreateDebugUtilsMessengerEXT "
+                "failed with error code %d\n",
+                result);
+        vkDestroyInstance(vk->inst, nullptr);
+        vk->inst = VK_NULL_HANDLE;
+        return false;
+    }
+#endif
 
     // Vulkan Wayland surface
 
@@ -65,7 +149,7 @@ bool vk_init(struct Vk* vk, struct Wl* wl) {
     surface_info.surface = wl->surface;
 
     result = vkCreateWaylandSurfaceKHR(
-        vk->inst, &surface_info, NULL, &vk->surf);
+        vk->inst, &surface_info, nullptr, &vk->surf);
     if (result != VK_SUCCESS) {
         fprintf(stderr,
                 "vkCreateWaylandSurfaceKHR failed with "
@@ -79,7 +163,8 @@ bool vk_init(struct Vk* vk, struct Wl* wl) {
     uint32_t ndev = 0;
 
     result =
-        vkEnumeratePhysicalDevices(vk->inst, &ndev, NULL);
+        vkEnumeratePhysicalDevices(vk->inst, &ndev,
+                                   nullptr);
     if (result != VK_SUCCESS) {
         fprintf(stderr,
                 "vkEnumeratePhysicalDevices failed with "
@@ -100,7 +185,15 @@ bool vk_init(struct Vk* vk, struct Wl* wl) {
 
     result = vkEnumeratePhysicalDevices(vk->inst, &ndev,
                                         devices);
-
+    if (result == VK_INCOMPLETE) {
+        // More devices arrived than fit the
+        // fixed array. The driver wrote only
+        // what fits, so clamp and use those.
+        if (ndev > 8) {
+            ndev = 8;
+        }
+        result = VK_SUCCESS;
+    }
     if (result != VK_SUCCESS) {
         fprintf(stderr,
                 "vkEnumeratePhysicalDevices failed with "
@@ -119,7 +212,7 @@ bool vk_init(struct Vk* vk, struct Wl* wl) {
         uint32_t nfam = 0;
 
         vkGetPhysicalDeviceQueueFamilyProperties(
-            devices[i], &nfam, NULL);
+            devices[i], &nfam, nullptr);
 
         if (nfam > 8)
             nfam = 8;
@@ -198,7 +291,7 @@ bool vk_init(struct Vk* vk, struct Wl* wl) {
         sizeof(device_exts) / sizeof(device_exts[0]);
     device_info.ppEnabledExtensionNames = device_exts;
 
-    result = vkCreateDevice(vk->phys, &device_info, NULL,
+    result = vkCreateDevice(vk->phys, &device_info, nullptr,
                             &vk->dev);
     if (result != VK_SUCCESS) {
         fprintf(
@@ -220,7 +313,7 @@ bool vk_init(struct Vk* vk, struct Wl* wl) {
     pool_info.queueFamilyIndex = vk->qfam;
 
     result = vkCreateCommandPool(vk->dev, &pool_info,
-                                  NULL, &vk->cmd_pool);
+                                  nullptr, &vk->cmd_pool);
     if (result != VK_SUCCESS) {
         fprintf(stderr,
                 "vkCreateCommandPool failed with error "
@@ -229,12 +322,17 @@ bool vk_init(struct Vk* vk, struct Wl* wl) {
         return false;
     }
 
-    // Frame sync objects. Flint keeps exactly one frame in flight, so one set is enough. in_flight starts signaled so the first wait in vk_draw_frame doesn't block forever.
+    // Frame sync objects. One frame in flight,
+    // so one acquire semaphore and fence.
+    // in_flight starts signaled so the first
+    // wait does not block. image_available
+    // stays single: the fence gates its reuse
+    // after consume.
     VkSemaphoreCreateInfo sem_info = {0};
     sem_info.sType =
         VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-    result = vkCreateSemaphore(vk->dev, &sem_info, NULL,
+    result = vkCreateSemaphore(vk->dev, &sem_info, nullptr,
                                 &vk->image_available);
     if (result != VK_SUCCESS) {
         fprintf(stderr,
@@ -244,14 +342,30 @@ bool vk_init(struct Vk* vk, struct Wl* wl) {
         return false;
     }
 
-    result = vkCreateSemaphore(vk->dev, &sem_info, NULL,
-                                &vk->render_finished);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr,
-                "vkCreateSemaphore failed with error "
-                "code %d\n",
-                result);
-        return false;
+    // vk_init creates one signal semaphore
+    // per image slot. The fence tracks
+    // submit, not present consumption, so a
+    // shared signal could be re-signaled
+    // while a present still holds it.
+    for (uint32_t i = 0;
+         i < VK_MAX_SWAPCHAIN_IMAGES; i++) {
+        result = vkCreateSemaphore(
+            vk->dev, &sem_info, nullptr,
+            &vk->render_finished[i]);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr,
+                    "vkCreateSemaphore failed with "
+                    "error code %d\n",
+                    result);
+            for (uint32_t j = 0; j < i; j++) {
+                vkDestroySemaphore(
+                    vk->dev,
+                    vk->render_finished[j], nullptr);
+                vk->render_finished[j] =
+                    VK_NULL_HANDLE;
+            }
+            return false;
+        }
     }
 
     VkFenceCreateInfo fence_info = {0};
@@ -259,7 +373,7 @@ bool vk_init(struct Vk* vk, struct Wl* wl) {
         VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    result = vkCreateFence(vk->dev, &fence_info, NULL,
+    result = vkCreateFence(vk->dev, &fence_info, nullptr,
                             &vk->in_flight);
     if (result != VK_SUCCESS) {
         fprintf(
@@ -291,7 +405,7 @@ void vk_swapchain_destroy(struct Vk* vk) {
 
     if (vk->swapchain != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(vk->dev, vk->swapchain,
-                               NULL);
+                               nullptr);
         vk->swapchain = VK_NULL_HANDLE;
     }
 }
@@ -315,7 +429,7 @@ bool vk_swapchain_create(struct Vk* vk, struct Wl* wl) {
     // Surface formats. First call for the count, second to fill the array.
     uint32_t nfmt = 0;
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(
-        vk->phys, vk->surf, &nfmt, NULL);
+        vk->phys, vk->surf, &nfmt, nullptr);
     if (result != VK_SUCCESS || nfmt == 0) {
         fprintf(stderr,
                 "vkGetPhysicalDeviceSurfaceFormatsKHR "
@@ -329,6 +443,15 @@ bool vk_swapchain_create(struct Vk* vk, struct Wl* wl) {
     VkSurfaceFormatKHR formats[8] = {0};
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(
         vk->phys, vk->surf, &nfmt, formats);
+    if (result == VK_INCOMPLETE) {
+        // More formats arrived than fit the
+        // fixed array. The driver wrote only
+        // what fits, so clamp and use those.
+        if (nfmt > 8) {
+            nfmt = 8;
+        }
+        result = VK_SUCCESS;
+    }
     if (result != VK_SUCCESS) {
         fprintf(stderr,
                 "vkGetPhysicalDeviceSurfaceFormatsKHR "
@@ -400,8 +523,9 @@ bool vk_swapchain_create(struct Vk* vk, struct Wl* wl) {
     sc_info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
     sc_info.clipped = VK_TRUE;
 
-    result = vkCreateSwapchainKHR(vk->dev, &sc_info, NULL,
-                                   &vk->swapchain);
+    result =
+        vkCreateSwapchainKHR(vk->dev, &sc_info, nullptr,
+                             &vk->swapchain);
     if (result != VK_SUCCESS) {
         fprintf(stderr,
                 "vkCreateSwapchainKHR failed with error "
@@ -412,7 +536,7 @@ bool vk_swapchain_create(struct Vk* vk, struct Wl* wl) {
 
     uint32_t nimg = 0;
     result = vkGetSwapchainImagesKHR(
-        vk->dev, vk->swapchain, &nimg, NULL);
+        vk->dev, vk->swapchain, &nimg, nullptr);
     if (result != VK_SUCCESS || nimg == 0) {
         fprintf(stderr,
                 "vkGetSwapchainImagesKHR failed with "
@@ -425,6 +549,15 @@ bool vk_swapchain_create(struct Vk* vk, struct Wl* wl) {
     }
     result = vkGetSwapchainImagesKHR(
         vk->dev, vk->swapchain, &nimg, vk->images);
+    if (result == VK_INCOMPLETE) {
+        // More images arrived than fit the
+        // fixed array. The driver wrote only
+        // what fits, so clamp and use those.
+        if (nimg > VK_MAX_SWAPCHAIN_IMAGES) {
+            nimg = VK_MAX_SWAPCHAIN_IMAGES;
+        }
+        result = VK_SUCCESS;
+    }
     if (result != VK_SUCCESS) {
         fprintf(stderr,
                 "vkGetSwapchainImagesKHR failed with "
@@ -545,8 +678,8 @@ bool vk_draw_frame(struct Vk* vk, bool* resize_needed) {
 
     vkCmdPipelineBarrier(
         cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0,
-        NULL, 1, &to_clear);
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+        nullptr, 1, &to_clear);
 
     vkCmdClearColorImage(
         cmd, vk->images[image_index],
@@ -572,8 +705,8 @@ bool vk_draw_frame(struct Vk* vk, bool* resize_needed) {
 
     vkCmdPipelineBarrier(
         cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL,
-        0, NULL, 1, &to_present);
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr,
+        0, nullptr, 1, &to_present);
 
     result = vkEndCommandBuffer(cmd);
     if (result != VK_SUCCESS) {
@@ -588,6 +721,10 @@ bool vk_draw_frame(struct Vk* vk, bool* resize_needed) {
     VkPipelineStageFlags wait_stage =
         VK_PIPELINE_STAGE_TRANSFER_BIT;
 
+    // vk_draw_frame signals the acquired
+    // image's own slot so a later submit
+    // cannot re-signal a present still
+    // holding another image's semaphore.
     VkSubmitInfo submit_info = {0};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.waitSemaphoreCount = 1;
@@ -596,7 +733,8 @@ bool vk_draw_frame(struct Vk* vk, bool* resize_needed) {
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &cmd;
     submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &vk->render_finished;
+    submit_info.pSignalSemaphores =
+        &vk->render_finished[image_index];
 
     result = vkQueueSubmit(vk->queue, 1, &submit_info,
                             vk->in_flight);
@@ -612,7 +750,8 @@ bool vk_draw_frame(struct Vk* vk, bool* resize_needed) {
     present_info.sType =
         VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &vk->render_finished;
+    present_info.pWaitSemaphores =
+        &vk->render_finished[image_index];
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &vk->swapchain;
     present_info.pImageIndices = &image_index;
@@ -646,38 +785,67 @@ void vk_finish(struct Vk* vk) {
     vk_swapchain_destroy(vk);
 
     if (vk->in_flight != VK_NULL_HANDLE) {
-        vkDestroyFence(vk->dev, vk->in_flight, NULL);
+        vkDestroyFence(vk->dev, vk->in_flight, nullptr);
         vk->in_flight = VK_NULL_HANDLE;
     }
-    if (vk->render_finished != VK_NULL_HANDLE) {
-        vkDestroySemaphore(vk->dev, vk->render_finished,
-                            NULL);
-        vk->render_finished = VK_NULL_HANDLE;
+    // vk_finish destroys each per-image
+    // signal semaphore created in vk_init.
+    for (uint32_t i = 0;
+         i < VK_MAX_SWAPCHAIN_IMAGES; i++) {
+        if (vk->render_finished[i] !=
+            VK_NULL_HANDLE) {
+            vkDestroySemaphore(
+                vk->dev, vk->render_finished[i],
+                nullptr);
+            vk->render_finished[i] =
+                VK_NULL_HANDLE;
+        }
     }
     if (vk->image_available != VK_NULL_HANDLE) {
         vkDestroySemaphore(vk->dev, vk->image_available,
-                            NULL);
+                            nullptr);
         vk->image_available = VK_NULL_HANDLE;
     }
     if (vk->cmd_pool != VK_NULL_HANDLE) {
-        vkDestroyCommandPool(vk->dev, vk->cmd_pool, NULL);
+        vkDestroyCommandPool(vk->dev, vk->cmd_pool,
+                             nullptr);
         vk->cmd_pool = VK_NULL_HANDLE;
     }
 
+#ifndef NDEBUG
+    // Debug messenger before the surface:
+    // it may still log surface teardown.
+    if (vk->dbg != VK_NULL_HANDLE &&
+        vk->inst != VK_NULL_HANDLE) {
+        PFN_vkDestroyDebugUtilsMessengerEXT
+            destroy_messenger =
+                (PFN_vkDestroyDebugUtilsMessengerEXT)
+                    vkGetInstanceProcAddr(
+                        vk->inst,
+                        "vkDestroyDebugUtilsMessenger"
+                        "EXT");
+        if (destroy_messenger != nullptr) {
+            destroy_messenger(vk->inst, vk->dbg,
+                              nullptr);
+        }
+        vk->dbg = VK_NULL_HANDLE;
+    }
+#endif
+
     // Surface before device: legal because the swapchain, the only thing that tied them together, is already gone.
     if (vk->surf != VK_NULL_HANDLE) {
-        vkDestroySurfaceKHR(vk->inst, vk->surf, NULL);
+        vkDestroySurfaceKHR(vk->inst, vk->surf, nullptr);
         vk->surf = VK_NULL_HANDLE;
     }
 
     if (vk->dev != VK_NULL_HANDLE) {
-        vkDestroyDevice(vk->dev, NULL);
+        vkDestroyDevice(vk->dev, nullptr);
         vk->dev = VK_NULL_HANDLE;
         vk->queue = VK_NULL_HANDLE;
     }
 
     if (vk->inst != VK_NULL_HANDLE) {
-        vkDestroyInstance(vk->inst, NULL);
+        vkDestroyInstance(vk->inst, nullptr);
         vk->inst = VK_NULL_HANDLE;
     }
 

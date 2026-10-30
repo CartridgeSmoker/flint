@@ -1,5 +1,5 @@
-#ifndef WL_H
-#define WL_H
+#ifndef FLINT_WL_H
+#define FLINT_WL_H
 
 #include <stdbool.h>
 #include <wayland-client.h>

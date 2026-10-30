@@ -1,32 +1,70 @@
 CC ?= cc
+CXX ?= c++
 
-CFLAGS += -std=c11 -Wall -Wextra -Werror -O2 -Wunused-result
-CFLAGS += -Igenerated
+# Flint uses a C23 subset (nullptr,
+# constexpr objects, attributes) that
+# older compilers reject. Fail fast
+# with a clear message instead of
+# pages of syntax errors.
+C23_PROBE := $(shell printf '%s\n' \
+    'static constexpr unsigned N = 8;' \
+    '[[nodiscard]] static int f(void *p)' \
+    '{ return p == nullptr; }' \
+    'int arr[N];' \
+    'int main(void) { return f(nullptr); }' \
+    | $(CC) -std=c23 -pedantic -x c -c - \
+    -o /dev/null 2>/dev/null && echo ok)
+ifeq ($(C23_PROBE),)
+$(error C compiler rejects Flint's C23 subset (nullptr, constexpr objects, attributes); use a newer GCC or Clang)
+endif
+
+CFLAGS += -std=c23 -pedantic -Wall -Wextra -Werror
+CFLAGS += -O2 -Wunused-result
+CFLAGS += -Igenerated -Iinclude
+
+# C++ sources build as C++23. -Iinclude
+# lets src/ui.cpp find flint/ui.h, -I.
+# covers the include/flint/ui.h spelling.
+CXXFLAGS += -std=c++23 -pedantic -Wall -Wextra
+CXXFLAGS += -Werror -O2
+CXXFLAGS += -Igenerated -Iinclude -I.
 
 # Use pkg-config for Wayland/Vulkan flags if available
 PKG_CFLAGS := $(shell pkg-config --cflags wayland-client vulkan 2>/dev/null)
 PKG_LIBS := $(shell pkg-config --libs wayland-client vulkan 2>/dev/null)
 
-# Wayland flags
-WAYLAND_CFLAGS := $(shell pkg-config --cflags wayland-client)
-WAYLAND_LIBS := $(shell pkg-config --libs wayland-client)
-
-# Vulkan flags
-VULKAN_CFLAGS := $(shell pkg-config --cflags vulkan)
-VULKAN_LIBS := $(shell pkg-config --libs vulkan)
-
-# Wayland protocol generation
+# Wayland protocol discovery. Prefer
+# pkg-config so distro layout changes
+# do not break the build; fall back
+# to the historical prefix.
+WAYLAND_PROTOCOLS := $(shell pkg-config \
+    --variable=pkgdatadir \
+    wayland-protocols 2>/dev/null)
+ifeq ($(WAYLAND_PROTOCOLS),)
 WAYLAND_PROTOCOLS := /usr/share/wayland-protocols
+endif
 WAYLAND_SCANNER := wayland-scanner
 
 XDG_XML := $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml
+ifeq ($(wildcard $(XDG_XML)),)
+$(error xdg-shell.xml not found under $(WAYLAND_PROTOCOLS); install the wayland-protocols package)
+endif
 XDG_HEADER := generated/xdg-shell-client-protocol.h
 XDG_SOURCE := generated/xdg-shell-protocol.c
 
-BIN := bin
-SRC := src
-OBJ := $(BIN)/app.o $(BIN)/wl.o $(BIN)/vk.o
-HDR := include/flint/flint.h src/wl.h src/vk.h
+# Explicit C sources. The generated
+# protocol source builds as C.
+C_SRCS := main.c src/vk.c src/wl.c
+C_SRCS += src/flint.c $(XDG_SOURCE)
+
+# Explicit C++ sources. $(wildcard) keeps
+# make working before src/ui.cpp lands;
+# it expands empty until the file exists.
+CXX_SRCS := $(wildcard src/ui.cpp)
+
+C_OBJS := $(C_SRCS:.c=.o)
+CXX_OBJS := $(CXX_SRCS:.cpp=.o)
+OBJS := $(C_OBJS) $(CXX_OBJS)
 
 all: bin/flint
 
@@ -42,35 +80,24 @@ $(XDG_SOURCE): $(XDG_XML) | generated
 bin:
 	mkdir -p $@
 
-# Wayland protocol codegen
-$(BIN)/wayland-protocols-client.h $(BIN)/wayland-protocols-code.c: \
-        /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml
-	mkdir -p $(BIN)
-	wayland-scanner client-header $< $(BIN)/wayland-protocols-client.h
-	wayland-scanner private-code $< $(BIN)/wayland-protocols-code.c
+# C objects.
+%.o: %.c $(XDG_HEADER)
+	$(CC) $(CFLAGS) $(PKG_CFLAGS) -c $< -o $@
 
-# Object files
-$(BIN)/app.o: src/app.c $(HDR)
-	$(CC) -c $< -o $@ $(WAYLAND_CFLAGS) $(VULKAN_CFLAGS) -Iinclude
+# C++ objects.
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) $(PKG_CFLAGS) -c $< -o $@
 
-$(BIN)/wl.o: src/wl.c src/wl.h $(BIN)/wayland-protocols-client.h $(BIN)/wayland-protocols-code.c
-	$(CC) -c $< -o $@ $(WAYLAND_CFLAGS) -Iinclude -Isrc -Ibin
-
-$(BIN)/vk.o: src/vk.c src/vk.h
-	$(CC) -c $< -o $@ $(VULKAN_CFLAGS) -Iinclude -Isrc
-
-$(BIN)/flint: main.c $(OBJ)
-	$(CC) $^ -o $@ $(WAYLAND_LIBS) $(VULKAN_LIBS)
+# Link with $(CXX) so C++ objects resolve
+# libstdc++ without extra flags.
+bin/flint: $(OBJS) | bin
+	$(CXX) -o $@ $(OBJS) $(PKG_LIBS)
 
 check: bin/flint
-	./bin/flint
+	./bin/flint --frames 120
 
 clean:
+	rm -f main.o src/*.o
 	rm -rf bin dist generated
-
-# Prevent generated files from being committed
-.gitignore
-bin/wayland-protocols-client.h
-bin/wayland-protocols-code.c
 
 .PHONY: all check clean
